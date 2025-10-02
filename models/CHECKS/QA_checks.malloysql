@@ -1,0 +1,310 @@
+>>>malloy
+
+-- connection: neon
+source: croc_raw is neon.sql("""
+  with base as (
+    select
+      "Observation ID"             as observation_id,
+      trim("Common Name")          as common_name,
+      trim("Scientific Name")      as scientific_name,
+      trim("Family")               as family,
+      trim("Genus")                as genus,
+      "Observed Length (m)"::numeric       as observed_length_m,
+      "Observed Weight (kg)"::numeric       as observed_weight_kg,
+      trim("Age Class")            as age_class,
+      trim("Sex")                  as sex,
+      trim("Date of Observation")  as date_of_observation_str,
+      replace(replace(trim("Date of Observation"), '/', '-'), ' ', '-') as norm,
+      trim("Country/Region")       as country_region,
+      trim("Habitat Type")         as habitat_type,
+      trim("Conservation Status")  as conservation_status,
+      trim("Observer Name")        as observer_name,
+      trim("Notes")                as notes
+    from "RAW"."crocodile_species"
+  )
+  select
+    observation_id, common_name, scientific_name, family, genus,
+    observed_length_m, observed_weight_kg, age_class, sex,
+    date_of_observation_str,
+
+    CASE
+      WHEN norm = '' THEN NULL
+      WHEN substr(norm,5,1)='-' AND substr(norm,8,1)='-' THEN (norm)::date::timestamp
+      WHEN substr(norm,3,1)='-' AND substr(norm,6,1)='-' THEN
+           make_date(
+             split_part(norm,'-',3)::int,
+             split_part(norm,'-',2)::int,
+             split_part(norm,'-',1)::int
+           )::timestamp
+      ELSE NULL
+    END AS date_of_observation,
+
+    country_region, habitat_type, conservation_status, observer_name, notes
+  from base
+""")extend {
+# null checks
+  view: qa_null_checks is {
+    where: observation_id is null
+       or common_name     is null
+       or scientific_name is null
+       or family is null
+       or genus is null
+       or date_of_observation_str is null
+       or observed_length_m is null
+       or observed_weight_kg is null
+       or age_class is null
+       or sex is null
+       or date_of_observation is null
+       or country_region is null
+       or habitat_type is null
+       or conservation_status is null
+       or observer_name is null
+       or notes is null
+
+    select:
+      observation_id,
+      common_name,
+      scientific_name,
+      family,
+      genus,
+      observed_length_m,
+      observed_weight_kg,
+      age_class,    
+      sex,
+      date_of_observation_str
+      date_of_observation,
+      country_region,
+      habitat_type,
+      conservation_status,
+      observer_name,
+      notes
+  }
+# duplicates (including nulls)
+   view: qa_unique_observation_id is {
+    group_by: observation_id
+    aggregate: row_count is count()
+    having: row_count > 1
+  }
+# duplicates (excluding nulls)
+view: qa_unique_observation_id_not_null is {
+  where: observation_id is not null
+  group_by: observation_id
+  aggregate: row_count is count()
+  having: row_count > 1
+}
+
+# Accepted values checks
+view: qa_accepted_values is {
+  where: not (sex in ("Male","Female","Unknown"))
+     or not (age_class in ("Juvenile","Subadult","Adult","Unknown"))
+  select:
+    observation_id,
+    sex,
+    age_class
+}
+
+# positive numeric checks
+view: qa_positive_numbers is {
+  where: observed_length_m <= 0
+     or observed_weight_kg <= 0
+  select:
+    observation_id,
+    observed_length_m,
+    observed_weight_kg
+}
+# Composite uniqueness ex. should not repeat for same species in same country on the same date
+view: qa_unique_scientific_country_date is {
+  group_by: scientific_name, country_region, date_of_observation
+  aggregate: row_count is count()
+  having: row_count > 1
+}
+# flag date parameter checks
+view: qa_date_window is {
+  where:
+    date_of_observation <= now - 50 Years
+    or date_of_observation > now
+
+  select:
+    observation_id,
+    date_of_observation
+}
+
+# Crossfield Logic Checks (if age_class is Adult, observed_length_m must be present)
+view: qa_conditional_age_length is {
+  where: age_class = "Adult" and observed_length_m is null
+  select: observation_id, age_class, observed_length_m
+}
+
+# freshness check
+view: qa_freshness is {
+  where: date_of_observation >= now - 30 Days
+  aggregate: latest_obs is max(date_of_observation)
+}
+# unparsable_dates check
+view: qa_unparsable_dates is {
+  where: date_of_observation is null and date_of_observation_str is not null
+  select: observation_id, date_of_observation_str
+}
+
+}
+>>>sql
+--connection: neon
+DROP TABLE IF EXISTS "CHECKS"."qa_unique_ids";
+DROP TABLE IF EXISTS "CHECKS"."qa_null_checks";
+DROP TABLE IF EXISTS "CHECKS"."qa_unique_observation_id";
+DROP TABLE IF EXISTS "CHECKS"."qa_unique_observation_id_not_null";
+DROP TABLE IF EXISTS "CHECKS"."qa_accepted_values";
+DROP TABLE IF EXISTS "CHECKS"."qa_positive_numbers";
+DROP TABLE IF EXISTS "CHECKS"."qa_unique_scientific_country_date";
+DROP TABLE IF EXISTS "CHECKS"."qa_date_window";
+DROP TABLE IF EXISTS "CHECKS"."qa_conditional_age_length";
+DROP TABLE IF EXISTS "CHECKS"."qa_freshness";
+DROP TABLE IF EXISTS "CHECKS"."qa_unparsable_dates";
+>>>sql
+CREATE TABLE "CHECKS"."qa_unique_ids" AS (
+    WITH m AS ( 
+        select row::json->'observation_id' as observation_id  FROM  %{ croc_raw -> qa_accepted_values }% 
+    union all 
+    select row::json->'observation_id' as observation_id FROM %{ croc_raw -> qa_conditional_age_length }%
+    union all
+    select row::json->'observation_id' as observation_id FROM %{ croc_raw -> qa_date_window }%
+      union all
+    select row::json->'observation_id' as observation_id FROM %{ croc_raw -> qa_null_checks }%
+    union all
+    select row::json->'observation_id' as observation_id FROM %{ croc_raw -> qa_positive_numbers }%
+       union all
+    select row::json->'observation_id' as observation_id FROM %{ croc_raw -> qa_unique_observation_id }%
+    union all
+    select row::json->'observation_id' as observation_id FROM %{ croc_raw -> qa_unique_observation_id_not_null }%
+    union all
+    select row::json->'observation_id' as observation_id FROM %{ croc_raw -> qa_unparsable_dates }%
+
+    )
+SELECT
+   distinct observation_id::varchar as observation_id
+   FROM m
+   order by 1
+)
+>>>sql
+--connection: neon
+
+CREATE TABLE "CHECKS"."qa_date_window" AS (
+    WITH m AS ( %{ croc_raw -> qa_date_window }% )
+SELECT
+   row::json->'observation_id'::varchar as observation_id,
+   row::json->'date_of_observation' as date_of_observation
+   FROM m
+
+   
+)
+>>>sql
+--connection: neon
+
+CREATE TABLE "CHECKS"."qa_null_checks" AS (
+    WITH m AS ( %{ croc_raw -> qa_null_checks }% )
+SELECT
+    row::json->'observation_id'::varchar as observation_id,
+   row::json->'common_name'::varchar as common_name,
+   row::json->'scientific_name'::varchar as scientific_name,
+   row::json->'family'::varchar as family,
+   row::json->'genus'::varchar as genus,
+   row::json->'observed_length_m' as observed_length_m,
+   row::json->'observed_weight_kg' as observed_weight_kg,
+   row::json->'age_class'::varchar as age_class,
+   row::json->'sex'::varchar as sex,
+   row::json->'date_of_observation' as date_of_observation,
+   row::json->'country_region'::varchar as country_region,
+   row::json->'habitat_type'::varchar as habitat_type,
+   row::json->'conservation_status'::varchar as conservation_status,
+   row::json->'observer_name'::varchar as observer_name,
+   row::json->'notes'::varchar as notes
+   FROM m
+   
+)
+>>>sql
+--connection: neon
+
+CREATE TABLE "CHECKS"."qa_unique_observation_id" AS (
+    WITH m AS ( %{ croc_raw -> qa_unique_observation_id }% )
+SELECT
+    row::json->'observation_id'::varchar as observation_id,
+   row::json->'row_count' as row_count
+   FROM m
+
+)
+>>>sql
+--connection: neon
+
+CREATE TABLE "CHECKS"."qa_unique_observation_id_not_null" AS (
+    WITH m AS ( %{ croc_raw -> qa_unique_observation_id_not_null }% )
+SELECT
+    row::json->'observation_id'::varchar as observation_id,
+   row::json->'row_count' as row_count
+   FROM m
+
+)
+>>>sql
+--connection: neon
+
+CREATE TABLE "CHECKS"."qa_accepted_values" AS (
+    WITH m AS ( %{ croc_raw -> qa_accepted_values }% )
+SELECT
+    row::json->'observation_id'::varchar as observation_id,
+   row::json->'sex'::varchar as sex,
+   row::json->'age_class'::varchar as age_class
+   FROM m
+   
+)
+>>>sql
+--connection: neon
+
+CREATE TABLE "CHECKS"."qa_positive_numbers" AS (
+    WITH m AS ( %{ croc_raw -> qa_positive_numbers }% )
+SELECT
+row::json->'observation_id'::varchar as observation_id,
+   row::json->'observed_length_m' as observed_length_m,
+   row::json->'observed_weight_kg' as observed_weight_kg
+   FROM m
+   
+)
+>>>sql
+--connection: neon
+
+CREATE TABLE "CHECKS"."qa_unique_scientific_country_date" AS (
+    WITH m AS ( %{ croc_raw -> qa_unique_scientific_country_date }% )
+SELECT
+   row::json->'scientific_name'::varchar as scientific_name,
+   row::json->'country_region'::varchar as country_region,
+   row::json->'date_of_observation' as date_of_observation,
+   row::json->'row_count' as row_count
+   FROM m
+)
+>>>sql
+CREATE TABLE "CHECKS"."qa_conditional_age_length" AS (
+    WITH m AS ( %{ croc_raw -> qa_conditional_age_length }% )
+SELECT
+    row::json->'observation_id'::varchar as observation_id,
+    row::json->'age_class'::varchar as age_class,
+    row::json->'observed_length_m' as observed_length_m
+   
+   FROM m
+
+)
+>>>sql
+CREATE TABLE "CHECKS"."qa_freshness" AS (
+    WITH m AS ( %{ croc_raw -> qa_freshness }% )
+SELECT
+    row::json->'latest_obs' as latest_obs
+  
+   FROM m
+)
+>>>sql
+CREATE TABLE "CHECKS"."qa_unparsable_dates" AS (
+    WITH m AS ( %{ croc_raw -> qa_unparsable_dates }% )
+SELECT
+    row::json->'observation_id'::varchar as observation_id,
+   row::json->'date_of_observation_str'::varchar as date_of_observation
+  
+   FROM m
+  
+)

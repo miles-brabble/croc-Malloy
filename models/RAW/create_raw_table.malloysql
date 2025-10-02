@@ -1,0 +1,21 @@
+>>>malloy
+-- connection: postgres
+CREATE SCHEMA IF NOT EXISTS "RAW";
+
+CREATE TABLE IF NOT EXISTS "RAW"."crocodile_species" (
+  "Observation ID" integer,
+  "Common Name" text,
+  "Scientific Name" text,
+  "Family" text,
+  "Genus" text,
+  "Observed Length (m)" text,
+  "Observed Weight (kg)" text,
+  "Age Class" text,
+  "Sex" text,
+  "Date of Observation" text,
+  "Country/Region" text,
+  "Habitat Type" text,
+  "Conservation Status" text,
+  "Observer Name" text,
+  "Notes" text
+);

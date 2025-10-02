@@ -1,0 +1,46 @@
+>>>malloy
+--connection: neon
+source: croc_staging_date is neon.sql("""
+    select
+    distinct date_of_observation::date         as date_of_observation
+   
+  from "STAGING"."staging_croc"
+
+""") extend {
+
+  view: date_bounds is {
+  where: date_of_observation is not null
+ select: 
+    month_date is date_of_observation.month,
+    year_date is date_of_observation.year,
+    day_date is date_of_observation.day,
+    quarter_date is date_of_observation.quarter,
+    week_date is date_of_observation.week
+}
+
+}
+
+
+>>>sql
+--connection: neon
+DROP TABLE IF EXISTS "GOLDEN"."dim_dates"
+>>>sql
+--connection: neon
+
+CREATE TABLE "GOLDEN"."dim_dates" AS (
+    WITH m AS ( 
+      SELECT
+   (row->>'day_date')::date as day_date,
+    (row->>'month_date') as month_date,
+    (row->>'year_date') as year_date,
+    (row->>'quarter_date') as quarter_date,
+    (row->>'week_date') as week_date
+   FROM %{ croc_staging_date -> date_bounds }% )
+SELECT
+  day_date,
+  month_date,
+  year_date,
+  quarter_date,
+  week_date
+      FROM m
+)

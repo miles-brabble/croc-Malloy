@@ -1,0 +1,30 @@
+>>>malloy
+--connection: neon
+source: croc_staging_loc is neon.sql("""
+    select
+     *
+  from "STAGING"."staging_croc"
+""") extend {
+view: dim_location is {
+  where: country_region is not null
+   group_by:
+    country_region
+}
+
+}
+>>>sql
+--connection: neon
+DROP TABLE IF EXISTS "GOLDEN"."dim_location"
+>>>sql
+--connection: neon
+
+CREATE TABLE "GOLDEN"."dim_location" AS (
+    WITH m AS ( 
+      SELECT
+   (row->>'country_region')::varchar as country_region
+   FROM %{ croc_staging_loc -> dim_location }% )
+SELECT
+md5(coalesce(country_region,'')) as location_id,  
+  country_region as country_region
+      FROM m
+)

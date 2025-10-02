@@ -1,0 +1,30 @@
+>>>malloy
+--connection: neon
+source: croc_staging_obs is neon.sql("""
+    select
+     *
+  from "STAGING"."staging_croc"
+""") extend {
+view: dim_observer is {
+  where: observer_name is not null
+   group_by:
+    observer_name
+}
+
+}
+>>>sql
+--connection: neon
+DROP TABLE IF EXISTS "GOLDEN"."dim_observer"
+>>>sql
+--connection: neon
+
+CREATE TABLE "GOLDEN"."dim_observer" AS (
+    WITH m AS ( 
+      SELECT
+   (row->>'observer_name')::varchar as observer_name
+   FROM %{ croc_staging_obs -> dim_observer }% )
+SELECT
+md5(coalesce(observer_name,'')) as observer_id,  
+  observer_name as observer_name
+      FROM m
+)

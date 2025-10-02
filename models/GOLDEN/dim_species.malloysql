@@ -1,0 +1,37 @@
+>>>malloy
+--connection: neon
+source: croc_staging_spec is neon.sql("""
+    select
+     *
+  from "STAGING"."staging_croc"
+""") extend {
+view: dim_species is {
+  where: scientific_name is not null
+   group_by:
+    scientific_name, common_name, family, genus
+}
+
+
+}
+>>>sql
+--connection: neon
+DROP TABLE IF EXISTS "GOLDEN"."dim_species"
+>>>sql
+--connection: neon
+
+CREATE TABLE "GOLDEN"."dim_species" AS (
+    WITH m AS ( 
+      SELECT
+   (row->>'scientific_name')::varchar as scientific_name,
+   (row->>'common_name')::varchar as common_name,
+   (row->>'family')::varchar as family,
+   (row->>'genus')::varchar as genus 
+   FROM %{ croc_staging_spec -> dim_species }% )
+SELECT
+(md5(coalesce(scientific_name,'') || '|' || coalesce(common_name,'')))::varchar as species_id,  
+   scientific_name as scientific_name,
+   common_name as common_name,
+   family as family,
+   genus as genus
+      FROM m
+)

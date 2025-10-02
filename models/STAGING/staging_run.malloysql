@@ -1,0 +1,117 @@
+>>>malloy
+
+-- connection: neon
+
+
+source: croc_raw is neon.sql("""
+  with base as (
+    select
+      "Observation ID"             as observation_id,
+      trim("Common Name")          as common_name,
+      trim("Scientific Name")      as scientific_name,
+      trim("Family")               as family,
+      trim("Genus")                as genus,
+      "Observed Length (m)"::numeric       as observed_length_m,
+      "Observed Weight (kg)"::numeric       as observed_weight_kg,
+      trim("Age Class")            as age_class,
+      trim("Sex")                  as sex,
+      trim("Date of Observation")  as date_of_observation_str,
+      replace(replace(trim("Date of Observation"), '/', '-'), ' ', '-') as norm,
+      trim("Country/Region")       as country_region,
+      trim("Habitat Type")         as habitat_type,
+      trim("Conservation Status")  as conservation_status,
+      trim("Observer Name")        as observer_name,
+      trim("Notes")                as notes
+    from "RAW"."crocodile_species"
+  )
+  select
+    observation_id, common_name, scientific_name, family, genus,
+    observed_length_m, observed_weight_kg, age_class, sex,
+    date_of_observation_str,
+
+    CASE
+      WHEN norm = '' THEN NULL
+      WHEN substr(norm,5,1)='-' AND substr(norm,8,1)='-' THEN (norm)::date::timestamp
+      WHEN substr(norm,3,1)='-' AND substr(norm,6,1)='-' THEN
+           make_date(
+             split_part(norm,'-',3)::int,
+             split_part(norm,'-',2)::int,
+             split_part(norm,'-',1)::int
+           )::timestamp
+      ELSE NULL
+    END AS date_of_observation,
+
+    country_region, habitat_type, conservation_status, observer_name, notes
+  from base
+""") extend {
+  view: staging_croc is {
+    select:
+      observation_id,
+      common_name ,
+      scientific_name, 
+      family,
+      genus, 
+      observed_length_m, 
+      observed_weight_kg, 
+      age_class, 
+      sex, 
+      date_of_observation,
+      country_region,
+      habitat_type,
+      conservation_status,
+      observer_name,
+      notes
+  }
+}
+>>>sql
+--connection: neon
+
+DROP TABLE IF EXISTS "STAGING"."staging_croc";
+>>>sql
+
+
+--connection: neon
+--using checks in "CHECKS" schema to filter out bad records
+CREATE TABLE "STAGING"."staging_croc" AS (
+WITH m AS ( 
+   select 
+   (row->>'observation_id')::varchar as observation_id,
+   (row->>'common_name')::varchar as common_name,
+   (row->>'scientific_name')::varchar as scientific_name,
+   (row->>'family')::varchar  as family,
+   (row->>'genus')::varchar  as genus,
+   (row->>'observed_length_m')::decimal  as observed_length_m,
+   (row->>'observed_weight_kg')::decimal  as observed_weight_kg,
+   (row->>'age_class')::varchar  as age_class,
+   (row->>'sex')::varchar  as sex,
+   (row->>'date_of_observation')::date  as date_of_observation,
+   (row->>'country_region')::varchar  as country_region,
+   (row->>'habitat_type')::varchar  as habitat_type,
+   (row->>'conservation_status')::varchar  as conservation_status,
+   (row->>'observer_name')::varchar  as observer_name,
+   (row->>'notes')::varchar  as notes
+   FROM %{ croc_raw -> staging_croc }% ),
+t as (SELECT
+      observation_id as observation_id,
+      common_name as common_name,
+      scientific_name as scientific_name, 
+      family as family,
+      genus as genus, 
+      observed_length_m as observed_length_m, 
+      observed_weight_kg as observed_weight_kg, 
+      age_class as age_class, 
+      sex  as sex, 
+      date_of_observation as date_of_observation,
+      country_region  as country_region,
+      habitat_type as habitat_type,
+      conservation_status as conservation_status,
+      observer_name as observer_name,
+      notes as notes
+FROM m)
+
+SELECT t.*
+FROM t
+LEFT JOIN "CHECKS"."qa_unique_ids" e
+  ON t.observation_id = e.observation_id
+WHERE e.observation_id IS NULL
+)

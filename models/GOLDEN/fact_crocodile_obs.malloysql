@@ -1,0 +1,89 @@
+>>>malloy
+--connection: neon
+source: croc_staging_fact is neon.sql("""
+    with s as (
+  select *
+  from "STAGING"."staging_croc"
+),
+sp as (
+  select species_id, scientific_name, common_name
+  from "GOLDEN"."dim_species"
+),
+lo as (
+  select location_id, country_region
+  from "GOLDEN"."dim_location"
+),
+st as (
+  select conservation_status_id, conservation_status
+  from "GOLDEN"."dim_conservation_status"
+),
+ob as (
+  select observer_id, observer_name
+  from "GOLDEN"."dim_observer"
+)
+
+select
+  sp.species_id,
+  lo.location_id,
+  st.conservation_status_id,
+  ob.observer_id,
+  s.observation_id,
+  s.observed_length_m,
+  s.observed_weight_kg,
+  s.sex,
+  s.habitat_type
+
+from s
+left join sp on sp.scientific_name = s.scientific_name
+left join lo on lo.country_region  = s.country_region
+left join st on st.conservation_status = s.conservation_status
+left join ob on ob.observer_name   = s.observer_name
+""") extend {
+view: fact_crocs_obs is {
+    order_by: observation_id
+   select:
+   species_id,
+  location_id,
+  conservation_status_id,
+  observer_id,
+  observation_id,
+  observed_length_m,
+  observed_weight_kg,
+  sex,
+  habitat_type
+
+}
+
+}
+>>>sql
+--connection: neon
+DROP TABLE IF EXISTS "GOLDEN"."fact_crocodile_obs"
+>>>sql
+--connection: neon
+
+CREATE TABLE "GOLDEN"."fact_crocodile_obs" AS (
+    WITH m AS ( 
+      SELECT
+   (row->>'species_id')::varchar as species_id,
+   (row->>'location_id')::varchar as location_id,
+   (row->>'conservation_status_id')::varchar as conservation_status_id,
+   (row->>'observer_id')::varchar as observer_id,
+   (row->>'observation_id')::varchar as observation_id,
+   (row->>'observed_length_m')::varchar as observed_length_m,
+   (row->>'observed_weight_kg')::varchar as observed_weight_kg,
+   (row->>'sex')::varchar as sex,
+   (row->>'habitat_type')::varchar as habitat_type 
+   FROM %{ croc_staging_fact -> fact_crocs_obs }% )
+   
+SELECT
+ species_id,
+  location_id,
+  conservation_status_id,
+  observer_id,
+  observation_id,
+  observed_length_m,
+  observed_weight_kg,
+  sex,
+  habitat_type
+      FROM m
+)
