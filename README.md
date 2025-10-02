@@ -1,4 +1,5 @@
-<img width="1544" height="444" alt="image" src="https://github.com/user-attachments/assets/a73b7aa4-a61a-40c6-ae55-4c3b0b8f14bb" />
+<img width="1598" height="452" alt="image" src="https://github.com/user-attachments/assets/ab59035c-0ebc-47d9-bdc9-a0a2ed187dd4" />
+
 
 ## 🐊 Data Flow
 Execute run_all.sh to go through the appropriate run steps.
