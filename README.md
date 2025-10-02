@@ -3,11 +3,11 @@
 ## 🐊 Data Flow
 Execute run_all.sh to go through the appropriate run steps.
 
-1. **RAW (seeds/)**  
+1. **RAW (models/RAW/)**  
    - CSVs are loaded via python into Neon RAW schema.  
    - Example: `RAW.crocodile_species`.
   
-3. **CHECKS (models/checks/)**
+3. **CHECKS (models/CHECKS/)**
    - null checks
    - duplicates (including nulls)
    - duplicates (excluding nulls)
@@ -19,12 +19,12 @@ Execute run_all.sh to go through the appropriate run steps.
    - freshness check
    - unparsable_dates check
 
-2. **STAGING (models/staging/)**  
+2. **STAGING (models/STAGING/)**  
    - Standardizes column names and types.  
    - Handles light cleaning/checks.
    - Still at row-level grain.
 
-3. **GOLDEN (models/golden/)**  
+3. **GOLDEN (models/GOLDEN/)**  
    - **Dimensions**: `dim_species`, `dim_location`, `dim_date`, `dim_observer`, `dim_conservation_status`.  
    - **Fact**: `fact_croc_observation` with measures (`observed_length_m`, `observed_weight_kg`) and foreign keys to all dims.  
 
