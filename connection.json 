@@ -1,8 +1,0 @@
-{
-  "connections": {
-    "neon": {
-      "type": "postgres",
-      "connectionString": "postgresql://neondb_owner:npg_dYrx0ETujbK3@ep-soft-bar-adtib534-pooler.c-2.us-east-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require"
-    }
-  }
-}
