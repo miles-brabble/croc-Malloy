@@ -30,8 +30,8 @@ Execute run_all.sh to go through the appropriate run steps.
 
 4. **Folders** 
   - checks/ - qa checks (joined to staging to remove invalid observation ids).
-	- scripts/ - helper ingestion scripts (fetch CSVs).
-	- staging/ - row-level cleanup joined to checks/.
-	- golden/ - star schema (dims and fact) for BI & semantic layers.
+  - scripts/ - helper ingestion scripts (fetch CSVs).
+  - staging/ - row-level cleanup joined to checks/.
+  - golden/ - star schema (dims and fact) for BI & semantic layers.
   - raw/ - create table if not existent
   - csv/ - stores the csv pulled from py script
